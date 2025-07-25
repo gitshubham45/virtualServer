@@ -1,13 +1,13 @@
 package models
 
-import "time"
+import (
+	"gorm.io/gorm"
+)
 
-type Server struct{
-	ID string `json:"id"`
+type Server struct {
+	gorm.Model
 	Billing_rate float64 `json:"billing_rate"`
-	Status string `json:"status"`
-	Region string `json:"region"`
-	Type string `json:"type"`
-	Created_at time.Time `json:"created_at"`
-	Updated_at time.Time `json:"updated_at"`
+	Status       string  `json:"status"`
+	Region       string  `json:"region"`
+	Type         string  `json:"type"`
 }
