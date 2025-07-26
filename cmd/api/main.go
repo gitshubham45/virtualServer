@@ -20,6 +20,7 @@ func main() {
 	}
 
 	db.InitDB()
+	defer db.CloseDB()
 
 	router := gin.Default()
 
