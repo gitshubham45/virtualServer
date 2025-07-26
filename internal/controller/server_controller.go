@@ -87,6 +87,35 @@ func GetServersData(c *gin.Context) {
 }
 
 func CompleteAction(c *gin.Context) {
+	serverId := c.Param("action")
+
+	var req struct {
+		Action string `json:"action"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Error decoding req : %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+	}
+
+	action := req.Action
+
+
+	// check if the action is valid or not out of 4 option -
+	//  "pending," "running," "stopped," "terminated"
+
+	// fetch the server using serverId
+
+	// status - running  - action - stop  - valid
+	// status - stopped - action - start - valid
+	// status - running - action - reebot - valid
+	// status - running - action - terminate - valid
+	// status - stopped - action - terminate - valid
+	// status - terminated - action - start - Invalid - return server is terminatyed
+	// status - terminated - action - stop - Invalid - retunrn servet is terminated
+	// status - running - action - start - Invalid - return already running
+	// status - stopped - action - stopped - Invalid - return already stopped
+	// status - terminated - action - terminate - Invalid - return already terminated
 
 }
 
