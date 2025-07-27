@@ -34,9 +34,9 @@ func InitDB() {
 		log.Fatalf("Error opening database: %v", err)
 	}
 
-	err = db.AutoMigrate(&models.Server{})
+	err = db.AutoMigrate(&models.Server{}, &models.ServerLog{})
 	if err != nil {
-		log.Fatalf("Failed to auto migrate schemas : %v" , err)
+		log.Fatalf("Failed to auto migrate schemas : %v", err)
 	}
 	fmt.Println("Database schema auto-migrated successfully for server model")
 

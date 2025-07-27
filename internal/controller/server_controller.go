@@ -157,7 +157,7 @@ func CompleteAction(c *gin.Context) {
 		}
 
 		logger.LogServerEvent(server.ID, "STATUS_CHANGE", fmt.Sprintf("Status changed to '%s'.", newStatus), logger.StringPtr(originalStatus), logger.StringPtr(newStatus))
-		
+
 		log.Printf("Server '%s' status changed from '%s' to '%s' via action '%s'.\n",
 			server.ID, originalStatus, newStatus, action)
 		c.JSON(http.StatusOK, gin.H{
@@ -212,5 +212,29 @@ func ListServers(c *gin.Context) {
 }
 
 func GetLogs(c *gin.Context) {
+	serverId := c.Param("id")
 
+	var logs []models.ServerLog
+
+	result := db.DB.Where("server_id = ?", serverId).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&logs)
+
+	if result.Error != nil {
+		logger.LogServerEvent(serverId, "LOGS_NOT_FOUND", fmt.Sprintf("Log not accessed for server '%s'", serverId), nil, nil)
+		log.Printf("Error fetching server logs for ID '%s' : '%v' \n", serverId, result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Error fetching server logs",
+			"error":   result.Error.Error(),
+		})
+		return
+	}
+
+	logger.LogServerEvent(serverId, "LOGS_ACCESSED", fmt.Sprintf("Log accessed for server '%s'", serverId), nil, nil)
+	log.Printf("Found %d logs for server ID '%s'.\n", len(logs), serverId)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Server logs fetched successfully",
+		"logs":    logs, 
+	})
 }

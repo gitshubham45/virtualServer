@@ -5,11 +5,13 @@ import (
 
 	"github.com/gitshubham45/virtualServer/internal/db"
 	"github.com/gitshubham45/virtualServer/internal/models"
+	"github.com/google/uuid"
 )
 
-// check what if we do not send the status string as pointer
 func LogServerEvent(serverID, eventType, message string, oldStatus, newStatus *string) {
+	newUUID := uuid.New().String()
 	logEntry := models.ServerLog{
+		ID:        newUUID,
 		ServerID:  serverID,
 		EventType: eventType,
 		Message:   message,
