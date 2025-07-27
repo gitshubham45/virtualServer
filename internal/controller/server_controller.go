@@ -7,7 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gitshubham45/virtualServer/internal/db"
+	"github.com/gitshubham45/virtualServer/internal/logger"
 	"github.com/gitshubham45/virtualServer/internal/models"
+	"github.com/gitshubham45/virtualServer/internal/service"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -46,6 +48,8 @@ func CreateServer(c *gin.Context) {
 		return
 	}
 
+	logger.LogServerEvent(newServer.ID, "SERVER_CREATED", "New server created.", nil, logger.StringPtr(newServer.Status))
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"id":      newServer.ID,
@@ -72,6 +76,7 @@ func GetServersData(c *gin.Context) {
 			return
 		}
 
+		logger.LogServerEvent(serverId, "SERVER_NOT_FOUND", "server not found.", nil, nil)
 		log.Printf("Error fetching server details foe ID '%s' : '%v' \n", serverId, result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": "Error fetching server details",
@@ -80,6 +85,7 @@ func GetServersData(c *gin.Context) {
 		return
 	}
 
+	logger.LogServerEvent(serverId, "SERVER_FOUND", "server found.", logger.StringPtr(server.Status), logger.StringPtr(server.Status))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Server details fetched successfully",
 		"server":  server,
@@ -87,36 +93,95 @@ func GetServersData(c *gin.Context) {
 }
 
 func CompleteAction(c *gin.Context) {
-	serverId := c.Param("action")
+	fmt.Println("Inside CompleteAction handler")
+
+	serverId := c.Param("id")
+	log.Printf("Attempting action on server with ID: %s\n", serverId)
 
 	var req struct {
 		Action string `json:"action"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("Error decoding req : %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		log.Printf("Error binding request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Invalid request body format",
+			"error":   err.Error(),
+		})
+		return
 	}
 
 	action := req.Action
 
+	var server models.Server
+	result := db.DB.First(&server, "id = ?", serverId)
 
-	// check if the action is valid or not out of 4 option -
-	//  "pending," "running," "stopped," "terminated"
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			log.Printf("Server with ID '%s' not found.\n", serverId)
+			c.JSON(http.StatusNotFound, gin.H{
+				"message": fmt.Sprintf("Server with ID '%s' not found.", serverId),
+			})
+			return
+		}
+		log.Printf("Error fetching server details for ID '%s': %v\n", serverId, result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Error fetching server details",
+			"error":   result.Error.Error(),
+		})
+		return
+	}
 
-	// fetch the server using serverId
+	originalStatus := server.Status
+	newStatus, errorMessage := service.HandleAction(action, originalStatus)
 
-	// status - running  - action - stop  - valid
-	// status - stopped - action - start - valid
-	// status - running - action - reebot - valid
-	// status - running - action - terminate - valid
-	// status - stopped - action - terminate - valid
-	// status - terminated - action - start - Invalid - return server is terminatyed
-	// status - terminated - action - stop - Invalid - retunrn servet is terminated
-	// status - running - action - start - Invalid - return already running
-	// status - stopped - action - stopped - Invalid - return already stopped
-	// status - terminated - action - terminate - Invalid - return already terminated
+	if errorMessage != "" {
+		logger.LogServerEvent(server.ID, "ACTION_DENIED", errorMessage, logger.StringPtr(originalStatus), nil)
+		log.Printf("Invalid state transition for server '%s': %s (Current: %s, Action: %s)\n",
+			server.ID, errorMessage, originalStatus, action)
+		c.JSON(http.StatusConflict, gin.H{
+			"message": errorMessage,
+		})
+		return
+	}
 
+	if newStatus != "" {
+		server.Status = newStatus
+		updateResult := db.DB.Save(&server)
+		if updateResult.Error != nil {
+			log.Printf("Error saving new status for server '%s': %v\n", server.ID, updateResult.Error)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": "Failed to update server status",
+				"error":   updateResult.Error.Error(),
+			})
+			return
+		}
+
+		logger.LogServerEvent(server.ID, "STATUS_CHANGE", fmt.Sprintf("Status changed to '%s'.", newStatus), logger.StringPtr(originalStatus), logger.StringPtr(newStatus))
+		
+		log.Printf("Server '%s' status changed from '%s' to '%s' via action '%s'.\n",
+			server.ID, originalStatus, newStatus, action)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Server action completed successfully",
+			"server": gin.H{
+				"id":        server.ID,
+				"status":    server.Status,
+				"stoppedAt": server.UpdatedAt,
+			},
+		})
+		return
+	}
+
+	logger.LogServerEvent(server.ID, fmt.Sprintf("ACTION_%s_NO_CHANGE", action), fmt.Sprintf("Action '%s' processed, status remains '%s'.", action, originalStatus), logger.StringPtr(originalStatus), nil)
+	log.Printf("Action '%s' on server '%s' completed without state change (current status: %s).\n",
+		action, server.ID, originalStatus)
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Action '%s' processed for server. Status remains '%s'.", action, originalStatus),
+		"server": gin.H{
+			"id":        server.ID,
+			"status":    server.Status,
+			"stoppedAt": server.UpdatedAt,
+		},
+	})
 }
 
 func ListServers(c *gin.Context) {
