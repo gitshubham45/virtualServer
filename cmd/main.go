@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gitshubham45/virtualServer/internal/db"
@@ -14,10 +15,13 @@ import (
 func main() {
 	fmt.Println("virtual server in golang")
 
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .enf file")
 	}
+
+	port := os.Getenv("APP_PORT")
 
 	db.InitDB()
 	defer db.CloseDB()
@@ -34,5 +38,5 @@ func main() {
 
 	routers.ServerRouter(api)
 
-	router.Run(":8080")
+	router.Run(":" + port)
 }
