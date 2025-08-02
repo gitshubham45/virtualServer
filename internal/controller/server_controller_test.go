@@ -1,7 +1,11 @@
 package controller
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gitshubham45/virtualServer/internal/db"
@@ -35,6 +39,7 @@ func setupTestDB(t *testing.T) (*gorm.DB, func()) {
 	return testDB , cleanup
 }
 
+
 func TestGetServersData(t *testing.T){
 	// set Gin to test mode to suppress debug output
 	gin.SetMode(gin.TestMode)
@@ -46,6 +51,103 @@ func TestGetServersData(t *testing.T){
 	testServer := models.Server{
 		ID : uuid.New().String(),
 		ServerNumber: 101,
-		B
+		BillingRate: 5.0,
+		Status: "running",
+		Region: "US East",
+		Type : "basic",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
+
+	// Insert the tese server into in-memory db
+	if err := testDB.Create(&testServer).Error ; err != nil {
+		t.Fatalf("Failed to create test server in DB: %v", err)
+	}
+
+	// create a new Gin router 
+	router := gin.Default()
+	router.GET("/api/servers/:id" , GetServersData)
+
+	// --- Test Case 1 : Server  Found case(Success) ---
+	t.Run("Server Found" , func (t *testing.T)  {
+		req , err := http.NewRequest(http.MethodGet, "/api/servers/" + testServer.ID , nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec,req) // call the handler
+
+		// Assertions
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected status %d for found seevr, got %d", http.StatusOK,rec.Code)
+		}
+
+		var response struct{
+			Message string `json:"message"`
+			Server models.Server `json:"server"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes() , &response); err != nil {
+			t.Fatalf("Failed to unmarshal response body: %v",err)
+		}
+
+		if err != nil{
+			t.Fatalf("Failed to unmarshal response body : %v", err)
+		}
+		
+		// Basic check fot ID , more comprehensive checks would compare all fields
+		if response.Server.ID != testServer.ID{
+			t.Errorf("Expected server ID %s , got %s", testServer.ID, response.Server.ID)
+		}
+		if response.Server.Status != testServer.Status {
+			t.Errorf("Expected server status %s , got %s" , testServer.Status , response.Server.Status)
+		}
+	})
+
+	// --- Test Case 2: Server Not Found --- 
+	t.Run("Server Not Found" , func(t *testing.T){
+		nonExistentID := uuid.New().String() // A random ID that wont be in DB
+		req , err := http.NewRequest(http.MethodGet, "/servers/" + nonExistentID , nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec,req)
+
+		// Assertions
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("Expected status %d for not found server , got %d" , http.StatusNotFound, rec.Code)
+		}
+
+		var response map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes() , &response); err != nil {
+			t.Fatalf("Failed to unmarshal response body: %v",err)
+		}
+		if response["message"] != "Server Not found"{
+			t.Errorf("Expected message 'Server not found' , got %s" , response["message"])
+		}
+	})
+
+	// --- Test Case 3: Invalid ID Format (Gin's param binding might catch this or it might proceed to DB) ---
+	t.Run("Invalid ID Format" , func(t *testing.T) {
+		// If Gin allows non-UUID strings to pass as params, it will hit DB.
+		// If you have validation middleware for UUID format, it would catch here.
+		// For simplicity, we'll assume it hits DB and gets Not Found or Internal Error.
+		invalidID := "not-a-uuid"
+		req , err := http.NewRequest(http.MethodGet , "/servers/" + invalidID , nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v",err)
+		}
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec,req)
+
+		// Assertions (depends on your actual handler's behavior for invalid UUIDs before DB query)
+		// Assuming GORM's First will return ErrRecordNotFound or a type error if UUID conversion fails internally
+		if rec.Code != http.StatusNotFound && rec.Code != http.StatusInternalServerError {
+			t.Errorf("Expected status %d or %d for invalid ID, got %d", http.StatusNotFound, http.StatusInternalServerError, rec.Code)
+		}
+	})
+
 }
