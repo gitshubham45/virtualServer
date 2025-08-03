@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,8 +17,15 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	Basic = "basic"
+	Plus  = "plus"
+	Prime = "prime"
+)
+
 func setupTestDB(t *testing.T) (*gorm.DB, func()) {
-	// open an in memory  SQlite database a cleanup function
+	// open an in memory(created only for testing period)
+	//  SQlite database
 	testDB, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Failed to connect to test databse : %v", err)
@@ -30,118 +39,171 @@ func setupTestDB(t *testing.T) (*gorm.DB, func()) {
 	originalDB := db.DB
 	db.DB = testDB
 
-	cleanup := func(){
-		sqlDB , _ := testDB.DB()
+	// cleanup function
+	cleanup := func() {
+		sqlDB, _ := testDB.DB()
 		sqlDB.Close() // close the in-memory DB connection
 		db.DB = originalDB
 	}
-	
-	return testDB , cleanup
+
+	return testDB, cleanup
 }
 
+func TestCreateServer(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 
-func TestGetServersData(t *testing.T){
+	_, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	serverConfig := map[string]interface{}{
+		"region": "India",
+		"type":   Prime,
+	}
+
+	jsonData, err := json.Marshal(serverConfig)
+	if err != nil {
+		t.Fatalf("Failed to encode json : %v", err)
+		panic(err)
+	}
+
+	router := gin.Default()
+	router.POST("/api/server" , CreateServer)
+
+	// --- Test case 1 : Server Creaetd ----
+	t.Run("Server Created", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodPost, "/api/server", bytes.NewBuffer(jsonData))
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		//A Asserions
+		if rec.Code != http.StatusCreated {
+			t.Errorf("Expected status %d for created , got %d", http.StatusCreated, rec.Code)
+		}
+
+		var response struct {
+			Message string `json:"message"`
+			ID      string `json:"id"`
+			Status  string `json:"status"`
+		}
+
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Faield to unmarshal the response body: %v", err)
+		}
+
+		if response.Message != "success" {
+			t.Errorf("Expectd message = 'success' , got '%s' ", response.Message)
+		}
+		if response.Status != "running" {
+			t.Errorf("Expected status = 'running' , got '%s'", response.Status)
+		}
+	})
+}
+func TestGetServersData(t *testing.T) {
 	// set Gin to test mode to suppress debug output
 	gin.SetMode(gin.TestMode)
 
 	// setup the in memory test databse and get cleanup function
-	testDB , cleanup := setupTestDB(t)
+	testDB, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	testServer := models.Server{
-		ID : uuid.New().String(),
+		ID:           uuid.New().String(),
 		ServerNumber: 101,
-		BillingRate: 5.0,
-		Status: "running",
-		Region: "US East",
-		Type : "basic",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		BillingRate:  5.0,
+		Status:       "running",
+		Region:       "US East",
+		Type:         "basic",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	// Insert the tese server into in-memory db
-	if err := testDB.Create(&testServer).Error ; err != nil {
+	if err := testDB.Create(&testServer).Error; err != nil {
 		t.Fatalf("Failed to create test server in DB: %v", err)
 	}
 
-	// create a new Gin router 
+	// create a new Gin router
 	router := gin.Default()
-	router.GET("/api/servers/:id" , GetServersData)
+	router.GET("/api/servers/:id", GetServersData)
 
 	// --- Test Case 1 : Server  Found case(Success) ---
-	t.Run("Server Found" , func (t *testing.T)  {
-		req , err := http.NewRequest(http.MethodGet, "/api/servers/" + testServer.ID , nil)
+	t.Run("Server Found", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "/api/servers/"+testServer.ID, nil)
 		if err != nil {
 			t.Fatalf("Failed to create request: %v", err)
 		}
 
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec,req) // call the handler
+		router.ServeHTTP(rec, req) // call the handler
 
 		// Assertions
 		if rec.Code != http.StatusOK {
-			t.Errorf("Expected status %d for found seevr, got %d", http.StatusOK,rec.Code)
+			t.Errorf("Expected status %d for found seevr, got %d", http.StatusOK, rec.Code)
 		}
 
-		var response struct{
-			Message string `json:"message"`
-			Server models.Server `json:"server"`
+		var response struct {
+			Message string        `json:"message"`
+			Server  models.Server `json:"server"`
 		}
-		if err := json.Unmarshal(rec.Body.Bytes() , &response); err != nil {
-			t.Fatalf("Failed to unmarshal response body: %v",err)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response body: %v", err)
 		}
 
-		if err != nil{
+		if err != nil {
 			t.Fatalf("Failed to unmarshal response body : %v", err)
 		}
-		
+
 		// Basic check fot ID , more comprehensive checks would compare all fields
-		if response.Server.ID != testServer.ID{
+		if response.Server.ID != testServer.ID {
 			t.Errorf("Expected server ID %s , got %s", testServer.ID, response.Server.ID)
 		}
 		if response.Server.Status != testServer.Status {
-			t.Errorf("Expected server status %s , got %s" , testServer.Status , response.Server.Status)
+			t.Errorf("Expected server status %s , got %s", testServer.Status, response.Server.Status)
 		}
 	})
 
-	// --- Test Case 2: Server Not Found --- 
-	t.Run("Server Not Found" , func(t *testing.T){
+	// --- Test Case 2: Server Not Found ---
+	t.Run("Server Not Found", func(t *testing.T) {
 		nonExistentID := uuid.New().String() // A random ID that wont be in DB
-		req , err := http.NewRequest(http.MethodGet, "/servers/" + nonExistentID , nil)
+		req, err := http.NewRequest(http.MethodGet, "/api/servers/"+nonExistentID, nil)
 		if err != nil {
 			t.Fatalf("Failed to create request: %v", err)
 		}
 
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec,req)
+		router.ServeHTTP(rec, req)
 
 		// Assertions
 		if rec.Code != http.StatusNotFound {
-			t.Errorf("Expected status %d for not found server , got %d" , http.StatusNotFound, rec.Code)
+			t.Errorf("Expected status %d for not found server , got %d", http.StatusNotFound, rec.Code)
 		}
 
 		var response map[string]string
-		if err := json.Unmarshal(rec.Body.Bytes() , &response); err != nil {
-			t.Fatalf("Failed to unmarshal response body: %v",err)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response body: %v", err)
 		}
-		if response["message"] != "Server Not found"{
-			t.Errorf("Expected message 'Server not found' , got %s" , response["message"])
+		if response["message"] != fmt.Sprintf("Server with ID '%s' not found.", nonExistentID) {
+			t.Errorf("Expected message 'Server not found' , got %s", response["message"])
 		}
 	})
 
 	// --- Test Case 3: Invalid ID Format (Gin's param binding might catch this or it might proceed to DB) ---
-	t.Run("Invalid ID Format" , func(t *testing.T) {
+	t.Run("Invalid ID Format", func(t *testing.T) {
 		// If Gin allows non-UUID strings to pass as params, it will hit DB.
 		// If you have validation middleware for UUID format, it would catch here.
 		// For simplicity, we'll assume it hits DB and gets Not Found or Internal Error.
 		invalidID := "not-a-uuid"
-		req , err := http.NewRequest(http.MethodGet , "/servers/" + invalidID , nil)
+		req, err := http.NewRequest(http.MethodGet, "/api/servers/"+invalidID, nil)
 		if err != nil {
-			t.Fatalf("Failed to create request: %v",err)
+			t.Fatalf("Failed to create request: %v", err)
 		}
 
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec,req)
+		router.ServeHTTP(rec, req)
 
 		// Assertions (depends on your actual handler's behavior for invalid UUIDs before DB query)
 		// Assuming GORM's First will return ErrRecordNotFound or a type error if UUID conversion fails internally

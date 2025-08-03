@@ -50,17 +50,17 @@ func CreateServer(c *gin.Context) {
 
 	logger.LogServerEvent(newServer.ID, "SERVER_CREATED", "New server created.", nil, logger.StringPtr(newServer.Status))
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
 		"message": "success",
 		"id":      newServer.ID,
 		"status":  newServer.Status,
 	})
-
 }
 
 func GetServersData(c *gin.Context) {
 	fmt.Println("inside get server")
 	serverId := c.Param("id")
+	fmt.Println("serverId ", serverId)
 
 	var server models.Server
 
@@ -146,6 +146,7 @@ func CompleteAction(c *gin.Context) {
 
 	if newStatus != "" {
 		server.Status = newStatus
+		// server.UpTime = serv
 		updateResult := db.DB.Save(&server)
 		if updateResult.Error != nil {
 			log.Printf("Error saving new status for server '%s': %v\n", server.ID, updateResult.Error)
@@ -235,6 +236,6 @@ func GetLogs(c *gin.Context) {
 	log.Printf("Found %d logs for server ID '%s'.\n", len(logs), serverId)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Server logs fetched successfully",
-		"logs":    logs, 
+		"logs":    logs,
 	})
 }
