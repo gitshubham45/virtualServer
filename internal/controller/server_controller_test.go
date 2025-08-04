@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -49,6 +50,13 @@ func setupTestDB(t *testing.T) (*gorm.DB, func()) {
 	return testDB, cleanup
 }
 
+type mockErrorDB struct{}
+
+// A helper method to simulate a GORM Create() returning an error
+func (m *mockErrorDB) Create(value interface{}) *gorm.DB {
+	return &gorm.DB{Error: errors.New("mock database connection failed")}
+}
+
 func TestCreateServer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -67,7 +75,7 @@ func TestCreateServer(t *testing.T) {
 	}
 
 	router := gin.Default()
-	router.POST("/api/server" , CreateServer)
+	router.POST("/api/server", CreateServer)
 
 	// --- Test case 1 : Server Creaetd ----
 	t.Run("Server Created", func(t *testing.T) {
@@ -75,6 +83,7 @@ func TestCreateServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create request: %v", err)
 		}
+		req.Header.Set("Content-Type", "application/json")
 
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -101,6 +110,45 @@ func TestCreateServer(t *testing.T) {
 			t.Errorf("Expected status = 'running' , got '%s'", response.Status)
 		}
 	})
+
+	// -- Server not created --
+	t.Run("Invalid request", func(t *testing.T) {
+		// check what is byte.Buffer()
+		invalidJSON := []byte(`{"region": "India", "type":}`)
+		req, err := http.NewRequest(http.MethodPost, "/api/server", bytes.NewBuffer(invalidJSON))
+		if err != nil {
+			t.Fatalf("Failed to create req:%v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		// Assertion
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected status as %d for internal server error , got %d", http.StatusBadRequest, rec.Code)
+		}
+
+		// var response struct{
+		// 	Error error `json:"error"`
+		// }
+
+		// if err := json.Unmarshal(rec.Body.Bytes() , &response) ; err != nil {
+		// 	t.Fatalf("Faield to unmarshal the response body: %v", err)
+		// }
+
+		// if err == nil {
+		// 	t.Errorf("Expected error but not got any")
+		// }
+	})
+
+	t.Run("Database error", func(t *testing.T) {
+		
+		originalDB := db.DB
+
+		validJSON := []byte(`{"region" : "India" , "type" : "Prime"}`)
+	})
+
 }
 func TestGetServersData(t *testing.T) {
 	// set Gin to test mode to suppress debug output
