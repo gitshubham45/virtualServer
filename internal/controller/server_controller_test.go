@@ -60,7 +60,7 @@ func (m *mockErrorDB) Create(value interface{}) *gorm.DB {
 func TestCreateServer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	_, cleanup := setupTestDB(t)
+	testDB , cleanup := setupTestDB(t)
 	defer cleanup()
 
 	serverConfig := map[string]interface{}{
@@ -142,11 +142,27 @@ func TestCreateServer(t *testing.T) {
 		// }
 	})
 
-	t.Run("Database error", func(t *testing.T) {
+	t.Run("Database Error", func(t *testing.T) {
 		
-		originalDB := db.DB
+		err := testDB.Migrator().DropTable(&models.Server{})
+		if err != nil {
+			t.Fatalf("Failed to drop table : %v", err)
+		}
 
-		validJSON := []byte(`{"region" : "India" , "type" : "Prime"}`)
+		validJSON := []byte(`{"region":"India" ,            "type" : "Prime"}`)
+		fmt.Println(validJSON)
+		req , err := http.NewRequest(http.MethodPost , "/api/server" , bytes.NewBuffer(validJSON)) // converted to stream of byte
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type" , "application/json")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec,req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("Expected status %d , got %d" , http.StatusInternalServerError , rec.Code)
+		}
 	})
 
 }

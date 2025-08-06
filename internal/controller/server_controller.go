@@ -29,6 +29,7 @@ func CreateServer(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("Error decoding req : %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
 	}
 
 	newUUID := uuid.New().String()
